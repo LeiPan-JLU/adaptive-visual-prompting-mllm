@@ -175,37 +175,67 @@ def fig3(summary):
     levels = ("Low", "Medium", "High")
     fig, ax = plt.subplots(figsize=(5.4, 3.3))
     for mode in MODES:
-        vals = [summary["density_buckets"][level][mode] for level in levels]
-        ax.plot(levels, vals, marker="o", ms=4, lw=1.5, color=COLORS[mode], label=LABELS[mode])
+        vals = [summary["density_buckets"][level][mode] * 100 for level in levels]
+        ax.plot(levels, vals, marker="o", ms=6, lw=2.0, color=COLORS[mode], label=LABELS[mode])
+    med_naive = summary["density_buckets"]["Medium"]["naive_som"] * 100
+    med_adapt = summary["density_buckets"]["Medium"]["adaptive_som"] * 100
+    ax.annotate(f"{med_naive:.1f}", (1, med_naive), xytext=(8, -14), textcoords="offset points",
+                fontsize=7, color=COLORS["naive_som"], fontweight="bold")
+    ax.annotate(f"{med_adapt:.1f}", (1, med_adapt), xytext=(8, 8), textcoords="offset points",
+                fontsize=7, color=COLORS["adaptive_som"], fontweight="bold")
     ax.set_ylabel("Accuracy (%)")
-    ax.set_ylim(0, 1.0)
-    ax.set_yticks(np.arange(0, 1.01, 0.2))
-    ax.set_yticklabels([f"{v:.0f}" for v in np.arange(0, 101, 20)])
+    ax.set_ylim(42, 74)
+    ax.set_yticks(np.arange(45, 71, 5))
     ax.set_xlabel("Detected-object density")
     ax.legend(ncol=4, frameon=False, loc="upper center", bbox_to_anchor=(0.5, 1.18))
     ax.grid(axis="y", linestyle=":", alpha=0.35)
     save(fig, "fig3_density_tradeoff")
 
 
+def _option_text(subset_row, letter):
+    if not letter:
+        return "—"
+    idx = ord(letter) - ord("A")
+    choices = subset_row.get("choices", [])
+    if 0 <= idx < len(choices):
+        return f"{letter} ({choices[idx]})"
+    return letter
+
+
 def fig4(data, meta, ids):
+    """Curated 2 Relation + 2 Counting cases, validated against predictions.
+
+    R0036: relation success where Raw/Naive fail and Grid/Adaptive succeed.
+    C0061: counting success over Naive (three train proposals, no distractor).
+    C0000: counting failure with class-agnostic proposals on walls/furniture.
+    R0069: relation failure where 2D boxes cannot express the tabletop layout.
+    """
     subset = {r["id"]: r for r in read_jsonl(ROOT / "data" / "eval_subset.jsonl")}
-    success = [i for i in ids if data["raw"][i]["correct"] is False and data["naive_som"][i]["correct"] is False
-               and data["adaptive_som"][i]["correct"] is True]
-    failure = [i for i in ids if data["adaptive_som"][i]["correct"] is False]
-    picks = success[:2] + failure[:2]
-    if not picks:
-        return
-    fig, axes = plt.subplots(2, 2, figsize=(8.4, 6.0))
+    picks = ["R0036", "C0061", "C0000", "R0069"]
+    for item_id in picks:
+        if item_id not in subset:
+            raise KeyError(item_id)
+    fig, axes = plt.subplots(2, 2, figsize=(8.4, 6.4))
     axes = axes.ravel()
     for ax, item_id in zip(axes, picks):
         row = data["adaptive_som"][item_id]
+        sub = subset[item_id]
         ax.imshow(mpimg.imread(ROOT / "prompts_cache" / "adaptive_som" / f"{item_id}.jpg"))
         ax.set_xticks([])
         ax.set_yticks([])
-        kind = "success" if item_id in success else "failure"
-        q = subset[item_id]["question"]
-        ax.set_title(f"{item_id} · {TASK_LABEL[row['task']]} · {kind}", fontsize=8)
-        ax.set_xlabel(f"Q: {q[:74]}{'...' if len(q) > 74 else ''}\nGold: {row['gold']}  |  Pred: {row['pred']}", fontsize=6.5)
+        if item_id == "R0036":
+            label = "Success · Relation (Raw/Naive fail)"
+        elif item_id == "C0061":
+            label = "Success · Counting (Naive fails)"
+        elif item_id == "C0000":
+            label = "Failure · Counting (class-agnostic distraction)"
+        else:
+            label = "Failure · Relation (2D boxes, 3D layout)"
+        q = sub["question"]
+        gold = _option_text(sub, row["gold"])
+        pred = _option_text(sub, row["pred"])
+        ax.set_title(f"{item_id} · {label}", fontsize=8)
+        ax.set_xlabel(f"Q: {q[:82]}{'...' if len(q) > 82 else ''}\nGold: {gold}  |  Pred: {pred}", fontsize=6.5)
     fig.tight_layout()
     save(fig, "fig4_qualitative_cases")
 

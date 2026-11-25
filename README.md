@@ -1,4 +1,4 @@
-﻿# Density-Aware Adaptive Visual Prompting for Edge Multimodal LLMs
+﻿# When Does Visual Prompting Help or Hurt Edge MLLMs?
 
 [![Code](https://img.shields.io/badge/Code-PyTorch-ee4c2c)](https://github.com/LeiPan-JLU/adaptive-visual-prompting-mllm)
 [![Paper](https://img.shields.io/badge/Paper-PDF-1f77b4)](paper/main.pdf)

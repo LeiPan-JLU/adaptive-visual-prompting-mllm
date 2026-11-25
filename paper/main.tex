@@ -18,30 +18,30 @@
 \newcommand{\method}{Density-Aware Adaptive SoM}
 \newcommand{\best}[1]{\textbf{#1}}
 
-\title{\vspace{-0.35in}\textbf{Density-Aware Adaptive Visual Prompting for Counting and Spatial Reasoning in Edge Multimodal Large Language Models}}
+\title{\vspace{-0.35in}\textbf{When Does Visual Prompting Help or Hurt Edge MLLMs? Occlusion Trade-offs and Density-Aware Adaptation}}
 \author{Lei Pan\\
 School of Artificial Intelligence, Jilin University, Changchun, China\\
-\texttt{panlei9925@mails.jlu.edu.cn}}
+\texttt{panlei9925@mails.jlu.edu.cn}\thanks{Code: \url{https://github.com/LeiPan-JLU/adaptive-visual-prompting-mllm}; Project page: \url{https://leipan-jlu.github.io}}}
 \date{November 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Training-free visual prompting is attractive for edge multimodal large language models (MLLMs), but the widely used Set-of-Mark (SoM) recipe was designed for large proprietary models and dense annotation budgets. On a 2B-parameter edge model, fixed thick boxes and large number tags can occlude the very objects needed for counting and spatial relation questions. We introduce \method{}, a training-free renderer that uses a lightweight detector to estimate object count $N$ and union box-area ratio $\rho$, then switches among three annotation regimes: thin translucent boxes for sparse scenes, compact outlines for medium density, and centre dots for dense scenes. On a fixed 400-question subset of CV-Bench 2D (200 counting, 200 spatial relation), evaluated with Qwen2-VL-2B-Instruct on an 8\,GB laptop GPU, Adaptive SoM reaches 62.0\% overall accuracy versus 61.5\% for the raw image and 56.8\% for naive SoM. The gain over naive SoM is significant ($p=0.0038$), while the gain over the raw image is not ($p=0.8642$); a simple coordinate Grid reaches 63.2\% and remains a strong baseline. The density-aware policy is most useful in the medium-density bucket (60.0\% versus 49.7\% for naive SoM), where fixed boxes are most harmful. The method requires no training, adds no model parameters, and keeps deterministic greedy decoding.
+Training-free visual prompting is attractive for edge multimodal large language models (MLLMs), yet the Set-of-Mark (SoM) recipe was designed for large proprietary models with dense annotation budgets. We report a controlled diagnostic study on Qwen2-VL-2B-Instruct with 400 CV-Bench 2D questions, rather than claiming a new state of the art. Two empirical findings emerge. First, \emph{task--prompt decoupling}: a simple $3\times3$ coordinate Grid improves 2D spatial relation accuracy to 66.5\% from 61.0\% for the raw image and reaches 63.2\% overall, without occluding the objects; in contrast, every detector-based SoM variant remains below the raw image on 2D counting (Raw 62.0\%; Adaptive 59.0\%; Naive 55.0\%). Second, an \emph{occlusion trade-off} coupled with \emph{class-agnostic detector distraction}: fixed thick boxes and opaque tags significantly hurt the 2B model (Naive 56.8\% vs.\ Raw 61.5\%, $p=0.0163$), especially at medium density (49.7\%). Density-aware rendering recovers most of this loss (62.0\% vs.\ 56.8\%, $p=0.0038$; medium 60.0\% vs.\ 49.7\%, $p=0.0015$), but it does not exceed the raw image ($p=0.8642$) because a category-agnostic detector can still place labels on irrelevant objects (e.g., bananas when the question asks about bowls). The study is training-free, adds no parameters, and runs in about 4.4\,GB on an 8\,GB laptop GPU.
 \end{abstract}
 
 \section{Introduction}
 \label{sec:intro}
-Multimodal large language models are increasingly deployed on consumer hardware, yet small open models still struggle with fine-grained counting and spatial relations. Qwen2-VL-2B-Instruct is a representative edge model: it accepts arbitrary-resolution images and fits in an 8\,GB GPU when the visual token budget is capped, but its model card and our pilot runs show that dense scenes remain difficult.
+Multimodal large language models are increasingly deployed on consumer hardware, but small open models still struggle with fine-grained counting and spatial relations. Qwen2-VL-2B-Instruct is a representative edge model: it accepts arbitrary-resolution images and fits in an 8\,GB GPU when the visual token budget is capped, yet dense scenes remain difficult.
 
 Set-of-Mark prompting improves visual grounding by drawing numbered marks on candidate regions. The original recipe assumes a strong segmentation proposal engine and a large model that can tolerate substantial overlay. On a 2B model, a thick box and a large opaque tag may hide the object boundary or the gap between two objects, which is exactly the evidence needed for counting and ``left of / above'' questions. This creates an \emph{occlusion trade-off}: annotations can help localization while simultaneously destroying the visual signal.
 
-We study this trade-off under a controlled, training-free protocol. Our contributions are:
+We therefore treat visual prompting as an empirical diagnosis problem. Our contributions are:
 \begin{itemize}
-\item We quantify the occlusion trade-off of fixed SoM on a small edge MLLM using a fixed 400-question CV-Bench 2D subset and four matched input conditions.
-\item We propose \method{}, a density-aware renderer that estimates $N$ and $\rho$ from YOLOv8n proposals and switches between three annotation regimes without retraining.
-\item We report accuracy by task and by density, paired McNemar tests, and latency on a single 8\,GB RTX 5060 Laptop GPU. The result is a boundary finding: density-aware marks prevent the collapse of naive SoM, but a simple grid remains stronger on this 2B model.
+\item A fixed, controlled 400-question CV-Bench 2D protocol (200 counting, 200 relation) that compares Raw, Grid, Naive SoM, and Adaptive SoM under identical questions and images on a 2B edge model.
+\item Two findings with clear boundaries: (i) \emph{task--prompt decoupling}---Grid helps spatial relation, while no detector-based SoM beats Raw on counting; (ii) \emph{occlusion trade-off plus class-agnostic detector distraction}---fixed SoM hurts, density-aware rendering recovers, but neither fixes labels placed on irrelevant objects.
+\item \method{}, a training-free renderer that uses object count $N$ and union box-area ratio $\rho$ to switch among three annotation regimes, with an open-source implementation and reproducible logs.
 \end{itemize}
 
 \begin{figure*}[t]
@@ -53,11 +53,14 @@ We study this trade-off under a controlled, training-free protocol. Our contribu
 
 \section{Related Work}
 \label{sec:related}
-\paragraph{Edge multimodal models.}
-Qwen2-VL combines a dynamic-resolution ViT with a Qwen2 language model and supports images of arbitrary aspect ratio \cite{wang2024qwen2vl}. The 2B variant is small enough for a laptop GPU, but visual tokens grow with resolution; we cap the processor at $512\times28\times28$ pixels to keep peak memory below 6.5\,GB.
+\paragraph{Edge multimodal LLMs.}
+LLaVA-1.5 established a strong open visual-instruction baseline \cite{liu2024llava15}, while Qwen2-VL adds dynamic-resolution vision encoding for images of arbitrary aspect ratio \cite{wang2024qwen2vl}. Cambrian-1 explores vision-centric MLLM design and introduces CV-Bench \cite{tong2024cambrian}; BLINK shows that many MLLMs can see but still fail at fine-grained perception \cite{fu2024blink}. These results motivate testing perception aids on a 2B model rather than assuming that a larger model's prompting recipe transfers.
 
 \paragraph{Training-free visual prompting.}
-Set-of-Mark prompting overlays numbered masks or boxes and substantially improves grounding in GPT-4V \cite{yang2023setofmark}. CV-Bench/Cambrian-1 provides a vision-centric benchmark with 2D counting and relation tasks \cite{tong2024cambrian}. Unlike prior work that assumes abundant compute, we ask whether a \emph{cheaper} annotation policy can help a 2B model, and when it hurts.
+Set-of-Mark overlays numbered masks or boxes and substantially improves grounding in GPT-4V \cite{yang2023setofmark}. Red-circle prompting studies visual prompt engineering for VLMs \cite{shtedritski2023redcircle}; Visual Sketchpad uses sketches as a visual chain of thought \cite{hu2024sketchpad}; See\&Trek studies training-free spatial prompting \cite{seetrek2025}; and recent work asks whether MLLMs know where to look for small details \cite{zhang2025mllmsknow}. Unlike this line of work, we quantify when marks help and when a detector's category-agnostic proposals become distractors on an edge model.
+
+\paragraph{Inference-time hallucination and spatial reasoning.}
+POPE evaluates object hallucination \cite{li2023pope}; VCD and OPERA mitigate hallucination through contrastive decoding and over-trust penalties \cite{leng2024vcd,huang2024opera}; test-time hallucination control remains an active direction \cite{tth2026}; and Visual-RFT explores reinforcement fine-tuning as an alternative to training-free prompting \cite{liu2025visualrft}. Our study is complementary: it holds the model fixed, uses no extra training, and diagnoses the interaction between annotation density and task type.
 
 \section{Method}
 \label{sec:method}
@@ -85,12 +88,17 @@ Low density uses a translucent coloured box (alpha 0.55) and a small corner tag.
 \begin{algorithmic}[1]
 \Require image $I$, detector $f$, thresholds in Eq.~2
 \State $B \gets f(I)$ \Comment{YOLOv8n, conf 0.25, max 20}
-\If{$B=\varnothing$} $B\gets$ contour proposals \EndIf
+\If{$B=\varnothing$}
+    \State $B\gets$ contour proposals
+\EndIf
 \State $N\gets|B|$; compute union mask $M$ and $\rho$
 \State $\ell\gets$ density level from Eq.~2
-\If{$\ell=$ Low} draw translucent boxes + corner tags
-\ElsIf{$\ell=$ Medium} draw 1\,px outlines + compact tags
-\Else draw centre dots + micro tags
+\If{$\ell=$ Low}
+    \State draw translucent boxes and corner tags
+\ElsIf{$\ell=$ Medium}
+    \State draw 1\,px outlines and compact tags
+\Else
+    \State draw centre dots and micro tags
 \EndIf
 \State \Return rendered image
 \end{algorithmic}
@@ -122,44 +130,44 @@ Adaptive SoM & 62.0 & 59.0 & 65.0 & 0.32 \\
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.98\textwidth]{figures/fig2_main_accuracy.pdf}
-\caption{Accuracy by task with 95\% Wilson intervals. Adaptive SoM is competitive on counting and relation questions while using a much smaller annotation footprint than naive SoM.}
+\caption{Accuracy by task with 95\% Wilson intervals. The Grid is strongest on spatial relation; no detector-based SoM beats Raw on counting.}
 \label{fig:main}
 \end{figure*}
 
 \begin{table}[t]
 \centering
-\small
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{lccccc}
+\footnotesize
+\setlength{\tabcolsep}{2.4pt}
+\begin{tabular}{lcccccc}
 \toprule
-Density & $n$ & Raw & Naive & Adaptive & $p$ \\
+Density & $n$ & Raw & Grid & Naive & Adaptive & $p$ \\
 \midrule
-Low & 135 & 58.5 & 57.8 & 60.0 & 0.5488 \\
-Medium & 145 & 60.0 & 49.7 & 60.0 & 0.0015 \\
-High & 120 & 66.7 & 64.2 & 66.7 & 0.6291 \\
+Low & 135 & 58.5 & \best{63.0} & 57.8 & 60.0 & 0.5488 \\
+Medium & 145 & \best{60.0} & 58.6 & 49.7 & \best{60.0} & 0.0015 \\
+High & 120 & 66.7 & \best{69.2} & 64.2 & 66.7 & 0.6291 \\
 \bottomrule
 \end{tabular}
-\caption{Accuracy (\%) by detected-object density. $p$ is the exact McNemar test for Adaptive vs naive SoM within the bucket.}
+\caption{Accuracy (\%) by detected-object density. $p$ is the exact McNemar test for Adaptive vs naive SoM within the bucket. Grid is included so the table matches Figure~\ref{fig:density}; the best value per row is bold.}
 \label{tab:density}
 \end{table}
 
-\paragraph{Main results.}
-Table~\ref{tab:main} reports overall and per-task accuracy. Adaptive SoM obtains 62.0\% overall, compared with 61.5\% for Raw, 63.2\% for Grid, and 56.8\% for Naive SoM. The paired McNemar test for Adaptive vs Raw gives $p=0.8642$; Adaptive vs Naive gives $p=0.0038$. The naive overlay is not automatically beneficial: fixed thick boxes significantly degrade overall accuracy relative to Raw ($p=0.0163$), mainly by obscuring small objects. Adaptive SoM recovers most of this loss but does not surpass the simple Grid; the difference between Grid and Raw is not significant ($p=0.4500$).
+\paragraph{Task--prompt decoupling.}
+Table~\ref{tab:main} shows that the Grid is the strongest condition on 2D spatial relation (66.5\% vs.\ Raw 61.0\%), and the strongest overall (63.2\%). In contrast, all detector-based marks remain below Raw on 2D counting: Raw 62.0\%, Adaptive 59.0\%, Naive 55.0\%, Grid 60.0\%. The pattern is consistent with \emph{task--prompt decoupling}: coordinate structure helps relational reasoning, whereas marks tuned to object proposals do not help counting on this model and can hurt it.
 
-\paragraph{Density analysis.}
-Table~\ref{tab:density} and Figure~\ref{fig:density} show the trade-off. In the low-density bucket all annotation schemes are close. The largest recovery is in the medium-density bucket: Adaptive SoM reaches 60.0\% versus 49.7\% for naive SoM (McNemar $p=0.0015$). In the high-density bucket the two are closer (66.7\% versus 64.2\%, $p=0.6291$), and the raw image obtains 66.7\%. The high-density result is a caution: reducing occlusion is necessary but not sufficient when the detector already misses or merges objects.
+\paragraph{Occlusion trade-off and class-agnostic distraction.}
+Naive SoM significantly degrades overall accuracy relative to Raw (56.8\% vs.\ 61.5\%, $p=0.0163$). Adaptive SoM recovers most of that loss (62.0\% vs.\ 56.8\%, $p=0.0038$), but does not exceed Raw ($p=0.8642$). Table~\ref{tab:density} localizes the effect: at medium density, Adaptive SoM reaches 60.0\% versus 49.7\% for Naive SoM ($p=0.0015$); at high density the two are closer (66.7\% vs.\ 64.2\%, $p=0.6291$), and Grid is strongest (69.2\%). Density reduction is necessary but not sufficient when the detector itself is unreliable. Because YOLOv8n is class-agnostic in our pipeline, it can label irrelevant objects (Figure~\ref{fig:cases}, bottom-left), which distracts the model even when the overlay is thin.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.98\columnwidth]{figures/fig3_density_tradeoff.pdf}
-\caption{Accuracy across low, medium, and high detected-object density. The density-aware policy gives the clearest recovery over naive SoM in the medium-density bucket; at high density it is close to both naive SoM and the raw image.}
+\caption{Accuracy across low, medium, and high detected-object density. The y-axis is truncated to 42--74\% to make the 49.7\% medium-density drop of Naive SoM and the 60.0\% recovery of Adaptive SoM visible; the full range is 0--100\%.}
 \label{fig:density}
 \end{figure}
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.98\textwidth]{figures/fig4_qualitative_cases.pdf}
-\caption{Qualitative cases. Top: examples where Raw and Naive SoM are wrong but Adaptive SoM is correct. Bottom: honest failures of Adaptive SoM. Each panel shows the adaptive input, the question, and gold/predicted letters.}
+\caption{Curated qualitative cases: two 2D Relation and two 2D Counting examples. Top-left (R0036): Raw and Naive SoM fail while Grid and Adaptive SoM answer the relation correctly. Top-right (C0061): Naive SoM over-labels and fails on counting, while Adaptive SoM succeeds. Bottom-left (C0000): a class-agnostic detector places marks on walls/furniture, illustrating detector distraction. Bottom-right (R0069): a 2D box cannot express the tabletop layout needed for the relation. Each panel shows the question and both the option letter and its text.}
 \label{fig:cases}
 \end{figure*}
 
@@ -171,7 +179,7 @@ The detector and renderer are offline and run once per image. Inference cost is 
 
 \section{Conclusion and Limitations}
 \label{sec:conclusion}
-We presented a training-free, density-aware visual prompting policy for edge MLLMs. On a controlled 400-question CV-Bench 2D subset, naive fixed SoM significantly degrades accuracy relative to the raw image, while density-aware rendering recovers most of that loss and is significantly better than naive SoM. However, a simple 3$\times$3 coordinate Grid remains the strongest condition overall; the honest conclusion is that adaptive marks are useful mainly as a safeguard against over-annotation, not as a universal improvement. The study is limited to one 2B base model, one benchmark subset, and 2D tasks; extending it to multiple base models, 3D relations, and learned proposal policies is future work. The detector dependency is explicit: better proposals should translate directly into better prompts.
+We presented a diagnostic study of training-free visual prompting for edge MLLMs, not a new state-of-the-art claim. On a fixed 400-question CV-Bench 2D subset, we find task--prompt decoupling: a simple coordinate Grid improves spatial relation (66.5\% vs.\ 61.0\%) and is strongest overall (63.2\%), while no detector-based SoM beats Raw on counting (62.0\%). We also find an occlusion trade-off and a detector-distraction bottleneck: fixed Naive SoM significantly hurts (56.8\% vs.\ 61.5\%), density-aware rendering recovers most of the loss (62.0\%, $p=0.0038$ vs.\ Naive; medium 60.0\% vs.\ 49.7\%), but cannot surpass Raw or repair labels placed on irrelevant objects. The study is limited to one 2B base model, one benchmark subset, and 2D tasks; extending it to multiple base models, 3D relations, and detector-aware proposal filtering is future work.
 
 \bibliographystyle{plain}
 \bibliography{references}
