@@ -1,4 +1,4 @@
-﻿\documentclass[10pt,twocolumn]{article}
+\documentclass[10pt,twocolumn]{article}
 \usepackage[margin=0.72in]{geometry}
 \usepackage{times}
 \usepackage{microtype}
@@ -167,7 +167,7 @@ Table~\ref{tab:density} and Figure~\ref{fig:density} show the trade-off. In the 
 Two failure modes dominate. First, the detector can miss a small object, so no mark is placed and the model has to count from the raw image. Second, a contour fallback may merge adjacent objects into one proposal, producing a misleading count. Spatial relation questions also fail when the relation depends on 3D layout or occlusion cues that a 2D box cannot express. These failures are reported rather than filtered: the method improves the annotation policy, not the detector or the model's visual prior.
 
 \paragraph{Cost.}
-The detector and renderer are offline and run once per image. Inference cost is dominated by the 2B MLLM; mean latency is 0.31\,s for Raw and 0.32\,s for Adaptive SoM, with peak allocated memory 0\,MB. No training, fine-tuning, or additional parameters are introduced.
+The detector and renderer are offline and run once per image. Inference cost is dominated by the 2B MLLM; mean latency is 0.31\,s for Raw and 0.32\,s for Adaptive SoM, with peak allocated memory 4437\,MB (4.4\,GB). No training, fine-tuning, or additional parameters are introduced.
 
 \section{Conclusion and Limitations}
 \label{sec:conclusion}

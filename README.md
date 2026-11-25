@@ -1,7 +1,7 @@
 ﻿# Density-Aware Adaptive Visual Prompting for Edge Multimodal LLMs
 
 [![Code](https://img.shields.io/badge/Code-PyTorch-ee4c2c)](https://github.com/LeiPan-JLU/adaptive-visual-prompting-mllm)
-[![Paper](https://img.shields.io/badge/Paper-LaTeX-1f77b4)](paper/main.tex)
+[![Paper](https://img.shields.io/badge/Paper-PDF-1f77b4)](paper/main.pdf)
 [![Python](https://img.shields.io/badge/Python-3.13-3776ab)](requirements.txt)
 
 Training-free visual prompting for small multimodal models, evaluated on a fixed
