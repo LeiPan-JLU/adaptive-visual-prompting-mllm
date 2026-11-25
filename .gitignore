@@ -1,0 +1,17 @@
+# Local environments and caches
+.venv/
+.yolo/
+__pycache__/
+*.py[cod]
+*.log
+
+# Large assets (download/regenerate with README commands)
+models/
+data/raw/
+data/images/
+prompts_cache/
+
+# OS/editor debris
+.DS_Store
+.vscode/
+.idea/
